@@ -1,0 +1,258 @@
+---
+title: "Untitled"
+author: "Josip Domazet"
+date: '20 08 2019 '
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading Packages
+
+```{r}
+library(tidyverse)
+library(ggplot2)
+library(ggthemes)
+library(corrplot)
+library(psych)
+library(leaflet)
+library(naniar) 
+library(knitr)
+library(kableExtra)
+library(plotly)
+library(cowplot)
+
+```
+
+## Knowing our data
+
+```{r cars}
+dat <- read.csv("data/countries.csv", encoding="UTF-8")
+glimpse(dat)
+dat$GDP.per.Capita <-  as.numeric(gsub('[$,]', '', dat$GDP.per.Capita))
+
+```
+We can see that 19 of the columns are numeric types. Column GDP.per.Capita had to be converted to 
+_double_ type. Other columns are factors. We will ommit _Data.Quality_ because we will not use it anywhere.
+
+### Checking for missing data
+
+```{r}
+missing_data <- dat %>% summarise_all(funs(sum(is.na(.))/n()))
+missing_data <- gather(missing_data, key = "variables", value = "percent_missing")
+missing_data <- missing_data[missing_data$percent_missing > 0.0, ] 
+ggplot(missing_data, aes(x = reorder(variables, percent_missing), y = percent_missing)) +
+geom_bar(stat = "identity", fill = "red", aes(color = I('white')), size = 0.3)+
+xlab('variables')+
+coord_flip()+ 
+theme_fivethirtyeight() +
+  ggtitle("Missing Data By Columns",
+          subtitle = "HDI has the highest percentage")
+
+```
+
+```{r}
+table1_dat <- dat[is.na(dat$HDI), c(1,2)]
+rownames(table1_dat) <- NULL
+table1_dat %>% kable() %>%  kable_styling(bootstrap_options = "striped", full_width = T)
+```
+They are all pretty much small countries. 
+Hence, we can ommit them from our dataset.
+
+
+```{r}
+dat$Data.Quality <- NULL
+```
+
+## Visualising all numeric columns
+
+```{r}
+multi.hist(dat[,sapply(dat, is.numeric)])
+```
+
+Most of distrubutions are skewed. 
+We will inspect Total Ecological Footprint more detaily.
+
+```{r}
+
+dat %>% ggplot(aes(x = Total.Ecological.Footprint)) +
+  geom_histogram(bins = 30, aes(y = ..density..)) + 
+  geom_density(alpha = 0.3, fill = "lightgreen") +
+  theme_fivethirtyeight() +
+  ggtitle("Total Ecological Footprint",
+          subtitle = "Skewed Distribution") +# scale_x_continuous(trans = 'log10') + 
+  theme(axis.title = element_text(), axis.title.x = element_text())  # ovo je napravljeno zato što 538
+  #xlab(expression(~ log[10] ~ "(sales)"))
+
+
+```
+
+## Biggest polluters
+
+```{r}
+dat %>% arrange(desc(Total.Ecological.Footprint)) %>% select(Total.Ecological.Footprint, Country) %>% head(n = 15) %>% dplyr::rename(Footprint_per_Person = Total.Ecological.Footprint) %>% 
+kable() %>% 
+    kable_styling("striped", full_width = F) %>%
+  row_spec(1:5, bold = T, color = "white", background = "#D7261E")
+
+```
+
+
+## Visualising correlation
+
+```{r}
+k <- dat[, sapply(dat, is.numeric)]
+k <- k[complete.cases(k), ]
+korelacija <- cor(k) # izlaz je matrica
+corrplot(korelacija, method = "color")
+```
+```{r}
+k2 <- dat[, sapply(dat, is.numeric)]
+k2 <- k2[complete.cases(k2), ]
+korelacija2 <- cor(k2, method = "spearman") # izlaz je matrica
+corrplot(korelacija2, method = "color")
+```
+
+We can see that the results are different, 
+so we can conclude that the linear connections is not the best relationship.
+
+
+```{r pressure, echo=FALSE}
+dat %>% group_by(Region) %>% summarise(Total = sum(Total.Ecological.Footprint)) %>% 
+  ggplot(aes(Region, Total, fill = Region)) + geom_histogram(stat = "identity") +
+  theme_fivethirtyeight() +
+  ggtitle("Total Pollution by Region",
+          subtitle = "EU produces most total pollution") +
+  theme(axis.text.x = element_text(angle = 25, vjust = 0.65))
+
+```
+
+
+```{r}
+multi.hist(dat[,sapply(dat, is.numeric)])
+
+```
+
+
+```{r}
+library(caret)
+indeksi <- createDataPartition(dat$Total.Ecological.Footprint, list = F)
+datTrain <- dat[indeksi, ]
+datTest <- dat[-indeksi, ]
+
+
+```
+
+## Linear regression
+
+### Economical Featurs
+```{r}
+
+linear_model1 <- lm(Total.Ecological.Footprint ~ HDI, data = dat)
+summary(linear_model1)
+
+linear_model2 <- lm(Total.Ecological.Footprint ~ I(exp(HDI)), data = dat)
+summary(linear_model2)
+
+linear_model3 <- lm(Total.Ecological.Footprint ~ HDI + I(HDI**2), data = dat)
+summary(linear_model3)
+
+slr <- ggplot(dat, aes(HDI, Total.Ecological.Footprint)) +
+  geom_point(aes(text = Country)) +
+  geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
+  geom_smooth(method= "lm", formula = (y ~ x + I(x**2)), color = "blue", linetype = 2, se=F) +
+  ggtitle("Simple Linear Regression",
+          subtitle = "Model With Quadratic Term does much better") 
+
+ggplotly(slr, tooltip="text")
+```
+
+```{r}
+slr <- ggplot(dat, aes(GDP.per.Capita, Total.Ecological.Footprint)) +
+  geom_point(aes(text = Country)) +
+  geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
+  geom_smooth(method= "lm", formula = (y ~ x + I(x**2)), color = "blue", linetype = 2, se=F) +
+  ggtitle("Simple Linear Regression",
+          subtitle = "Model With Quadratic Term does much better") 
+
+ggplotly(slr, tooltip="text")
+```
+
+
+```{r}
+ggplot(dat, aes(x = HDI, y = GDP.per.Capita)) +
+  geom_point() +
+  theme_fivethirtyeight() +
+  ggtitle("HDI vs GDP per Capita") +
+   theme(axis.title = element_text(), axis.title.x = element_text())
+
+```
+
+It should be obvious that HDI and GDP are not linearly correlated.
+
+
+
+```{r}
+multiple1 <- lm(Total.Ecological.Footprint ~  I(HDI**2) + I(GDP.per.Capita**2), data = dat)
+summary(multiple1)
+```
+
+## Geographical Features
+
+
+
+```{r}
+
+crops <- ggplot(dat, aes(x = Cropland, y = Total.Ecological.Footprint)) +
+  geom_point(aes(size = Total.Ecological.Footprint), alpha = 0.4, color = "#e6a526") +  theme_fivethirtyeight() +
+  ggtitle("Crop Land") +
+   theme(axis.title = element_text(), axis.title.x = element_text(), legend.position="none")
+
+
+urban <- ggplot(dat, aes(x = Urban.Land, y = Total.Ecological.Footprint)) +
+  geom_point(aes(size = Total.Ecological.Footprint), alpha = 0.4, color = "#FF7F50")+
+  theme_fivethirtyeight() +
+  ggtitle("Urban Land") +
+   theme(axis.title = element_text(), axis.title.x = element_text(), legend.position="none")
+
+forest <- ggplot(dat, aes(x = Forest.Land, y = Total.Ecological.Footprint)) +
+  geom_point(aes(size = Total.Ecological.Footprint), alpha = 0.4, color = "#56AB6F")+
+  theme_fivethirtyeight() +
+  ggtitle("Forest Land") +
+   theme(axis.title = element_text(), axis.title.x = element_text(), legend.position="none")
+
+fishing <- ggplot(dat, aes(x = Fishing.Water, y = Total.Ecological.Footprint)) +
+  geom_point(aes(size = Total.Ecological.Footprint), alpha = 0.4, color = "#504FB1")+
+  theme_fivethirtyeight() +
+  ggtitle("Fishing Water") +
+   theme(axis.title = element_text(), axis.title.x = element_text(), legend.position="none")
+
+
+cowplot::plot_grid(urban, forest, fishing, crops, ncol = 2, nrow = 2,
+                   label_y = "Total Footprint")
+
+```
+<br>
+We can eyeball that urban land is more important variable than forests and fishing water.
+
+
+```{r}
+
+```
+P-value for Urban.Land is quite high, so we will stick to older model.
+
+
+```{r}
+
+```
+
+
+
+
+
+
+
