@@ -7,7 +7,7 @@ output:
   pdf_document: default
 ---
 
-```{r setup, include=FALSE, warning=F, message=F}
+```{r setup, include=FALSE, warning = F, message=F}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
@@ -18,7 +18,7 @@ on 2016 Global Ecological Footprint dataset.
 
 ## Loading Packages
 
-```{r}
+```{r,warning = F, message=F}
 library(tidyverse)
 library(ggplot2)
 library(ggthemes)
@@ -34,6 +34,7 @@ library(caret)
 library(randomForest)
 library(rpart.plot)
 library(rpart)
+library(rgl)
 ```
 
 ## Know Your Data
@@ -76,6 +77,17 @@ table1_dat %>% kable(caption = "Countries with missing data") %>%  kable_styling
 ```
 They are all pretty much small countries (with exceptions like Côte d'Ivoire, Somalia etc.) . 
 
+
+## Data imputation using RF 
+
+```{r}
+indexes <- createDataPartition(dat$Total.Ecological.Footprint, list = F, p = 0.75)
+dat_train <- dat[indexes, ]
+dat_test <- dat[-indexes, ]
+
+dat_train_imputed <- rfImpute(Total.Ecological.Footprint ~ Region + Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land + Total.Biocapacity, data = dat_train, iter = 20)
+
+```
 
 
 ## Visualising all numeric columns
@@ -130,13 +142,13 @@ kable(caption = "Smallest polluters - by countries", col.names = c("Footprint pe
 k <- dat[, sapply(dat, is.numeric)]
 k <- k[complete.cases(k), ]
 korelacija <- cor(k)
-corrplot(korelacija, method = "color", tl.cex = 0.825, title = "Pearson correlation")
+corrplot(korelacija, method = "color", tl.cex = 0.825, title = "Pearson correlation", mar=c(0,0,1,0))
 ```
 ```{r}
 k2 <- dat[, sapply(dat, is.numeric)]
 k2 <- k2[complete.cases(k2), ]
 korelacija2 <- cor(k2, method = "spearman") # izlaz je matrica
-corrplot(korelacija2, method = "color", tl.cex = 0.825, title = "Spearman correlation")
+corrplot(korelacija2, method = "color", tl.cex = 0.825, title = "Spearman correlation", mar=c(0,0,1,0))
 ```
 
 We can see that the results are different, 
@@ -166,8 +178,6 @@ dat %>% group_by(Region) %>% summarise(Total = sum(Total.Ecological.Footprint)) 
   theme(axis.text.x = element_text(angle = 20, vjust = 0.65))
 
 ```
-European Union leads in total per capita footprint.
-
 
 ## Linear regression
 
@@ -186,9 +196,7 @@ summary(linear_model2)
 
 linear_model3 <- lm(Total.Ecological.Footprint ~ HDI + I(HDI**2), data = dat)
 summary(linear_model3)
-
-plot(linear_model3)
-
+ 
 slr <- ggplot(dat, aes(HDI, Total.Ecological.Footprint)) +
   geom_point(aes(text = Country)) +
   geom_smooth(method= "lm", color = "red", linetype = 1, se=F) +
@@ -225,7 +233,7 @@ It should be obvious that HDI and GDP are not linearly correlated.
 
 
 ```{r}
-multiple1 <- lm(Total.Ecological.Footprint ~ GDP.per.Capita + Region + HDI + I(GDP.per.Capita**2) + I(HDI**2) , data = dat)
+multiple1 <- lm(Total.Ecological.Footprint ~ GDP.per.Capita + HDI + I(GDP.per.Capita**2) + I(HDI**2) , data = dat)
 summary(multiple1)
 plot(multiple1)
 ```
@@ -279,16 +287,30 @@ cowplot::plot_grid(urban, forest, fishing, crops, ncol = 2, nrow = 2,
 <br>
 It can be seen increasing trends in all variables, except for _Forest Land_.
 
-## Data imputation 
+
+## Evaluating linear model
 
 ```{r}
-indexes <- createDataPartition(dat$Total.Ecological.Footprint, list = F, p = 0.75)
-dat_train <- dat[indexes, ]
-dat_test <- dat[-indexes, ]
 
-dat_train_imputed <- rfImpute(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land + Total.Biocapacity, data = dat_train, iter = 20)
+HDI <- dat$HDI
+GDP <- dat$GDP.per.Capita <- as.numeric(gsub('[$,]', '', dat$GDP.per.Capita))
+
+final_multiple <- lm(Total.Ecological.Footprint ~ GDP.per.Capita + HDI + I(GDP.per.Capita**2) + I(HDI**2) , data = dat_train_imputed)
+predicted <- predict(multiple1, newdata = dat_test)
+
+open3d()
+
+#plot datapoints GDP,HDI,ECO FOOTPRINT
+plot3d(predicted,HDI,GDP,col='red',xlab='Footprint',ylab='HDI',zlab ='GDP')
+#plot regression model as an approximation
+plot3d(dat$Total.Ecological.Footprint, HDI, GDP, col='blue', add = TRUE, xlab = 'Footprint', ylab='HDI', zlab='GDP')
+
+RMSE_mlr <- sqrt(mean((predicted[complete.cases(predicted)]- dat_test$Total.Ecological.Footprint[complete.cases(predicted)])**2))
 
 ```
+
+
+
 
 
 ## Regression Trees
@@ -299,7 +321,7 @@ d_tree <- rpart(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.p
 rpart.plot(d_tree, main="Regression Tree", fallen.leaves=T, box.palette="GnBu")
 
 predictions_d_tree <- predict(d_tree, newdata = dat_test)
-RMSE_d_tree <- sqrt(mean((predictions_d_tree[complete.cases(dat_test)] - dat_test$Total.Ecological.Footprint[complete.cases(dat_test)])**2))
+RMSE_regression_tree <- sqrt(mean((predictions_d_tree[complete.cases(dat_test)] - dat_test$Total.Ecological.Footprint[complete.cases(dat_test)])**2))
 ```
 RMSE score is 1.27.
 
@@ -354,4 +376,18 @@ ggplot(results, aes(x, y)) +
 ```
 
 We can see that random forest algorithm got better results than regression tree. That's not big of a surprise because random forests are well known for robustness and good scores.
+
+## Summary of models
+
+```{r}
+models <- tibble(
+  model_name = character(),
+  RMSE = numeric()
+)
+models <- add_row(models, model_name = "Multiple linear regression", RMSE = RMSE_mlr)
+models <- add_row(models, model_name = "Regression tree", RMSE = RMSE_regression_tree)
+models <- add_row(models, model_name = "Random forests", RMSE = RMSE_rf)
+
+models %>% kable(caption = "RMSE of different models") %>%  kable_styling("striped", full_width = T)
+```
 
