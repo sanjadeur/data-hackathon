@@ -1,15 +1,20 @@
 ---
-title: "Untitled"
-author: "Josip Domazet"
-date: '20 08 2019 '
+title: "Analysis of Ecological Footprint Dataset"
+author: "Josip Domazet, Ivan Landeka, Sanja Deur, Filip Sodić"
+date: '21 08 2019 '
 output:
   html_document: default
   pdf_document: default
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, warning=F, message=F}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+
+## About project
+
+Our project consist of exploratory data analysis (EDA) and predictive analytics 
+on 2016 Global Ecological Footprint dataset.
 
 ## Loading Packages
 
@@ -31,9 +36,9 @@ library(rpart.plot)
 library(rpart)
 ```
 
-## Knowing our data
+## Know Your Data
 
-```{r cars}
+```{r}
 dat <- read.csv("data/countries.csv", encoding="UTF-8")
 glimpse(dat)
 dat$GDP.per.Capita <-  as.numeric(gsub('[$,]', '', dat$GDP.per.Capita))
@@ -42,7 +47,13 @@ dat$GDP.per.Capita <-  as.numeric(gsub('[$,]', '', dat$GDP.per.Capita))
 We can see that 19 of the columns are numeric types. Column GDP.per.Capita had to be converted to 
 _double_ type. Other columns are factors. We will ommit _Data.Quality_ because we will not use it anywhere.
 
+```{r}
+dat$Data.Quality <- NULL
+```
+
 ### Checking for missing data
+
+It's always important to check for missing values and consider how to fix them.
 
 ```{r}
 missing_data <- dat %>% summarise_all(funs(sum(is.na(.))/n()))
@@ -61,33 +72,30 @@ theme_fivethirtyeight() +
 ```{r}
 table1_dat <- dat[is.na(dat$HDI), c(1,2)]
 rownames(table1_dat) <- NULL
-table1_dat %>% kable() %>%  kable_styling(bootstrap_options = "striped", full_width = T)
+table1_dat %>% kable(caption = "Countries with missing data") %>%  kable_styling(full_width = T)
 ```
-They are all pretty much small countries. 
-Hence, we can ommit them from our dataset.
+They are all pretty much small countries (with exceptions like Côte d'Ivoire, Somalia etc.) . 
 
 
-```{r}
-dat$Data.Quality <- NULL
-```
 
 ## Visualising all numeric columns
+
+It's useful to show histograms of all numeric columns.
 
 ```{r}
 multi.hist(dat[,sapply(dat, is.numeric)])
 ```
 
-Most of distrubutions are skewed. 
+Most of the variables (Population..millions, Fishing.Water, etc.) are right skewed. 
 We will inspect Total Ecological Footprint more detaily.
 
 ```{r}
-
 dat %>% ggplot(aes(x = Total.Ecological.Footprint)) +
   geom_histogram(bins = 30, aes(y = ..density..), fill = "purple") + 
   geom_density(alpha = 0.2, fill = "purple") +
   theme_fivethirtyeight() +
-  ggtitle("Total per Capita Footprint") +# scale_x_continuous(trans = 'log10') + 
-  theme(axis.title = element_text(), axis.title.x = element_text()) +# ovo je napravljeno zato što 538
+  ggtitle("Total per Capita Footprint") +
+  theme(axis.title = element_text(), axis.title.x = element_text()) +
   geom_vline(xintercept = mean(dat$Total.Ecological.Footprint), size = 1.75, linetype = 3) +
   annotate("text", x = 7, y = 0.35, label = "Average per Capita Footprint is 3.32")
 
@@ -97,11 +105,22 @@ dat %>% ggplot(aes(x = Total.Ecological.Footprint)) +
 ## Biggest polluters
 
 ```{r}
-dat %>% arrange(desc(Total.Ecological.Footprint)) %>% select(Total.Ecological.Footprint, Country) %>% head(n = 15) %>% dplyr::rename(Footprint_per_Person = Total.Ecological.Footprint) %>% 
-kable() %>% 
+dat %>% arrange(desc(Total.Ecological.Footprint)) %>% select(Total.Ecological.Footprint, Country) %>% head(n = 15) %>% dplyr::rename(Footprint_per_Person = Total.Ecological.Footprint) %>%
+kable(caption = "Biggest polluters - by countries", col.names = c("Footprint per Person",
+                           "Country")) %>%
     kable_styling("striped", full_width = F) %>%
   row_spec(1:5, bold = T, color = "white", background = "#D7261E")
 
+```
+
+## Smallest polluters
+
+```{r}
+dat %>% arrange((Total.Ecological.Footprint)) %>% select(Total.Ecological.Footprint, Country) %>% head(n = 15) %>% dplyr::rename(Footprint_per_Person = Total.Ecological.Footprint) %>%
+kable(caption = "Smallest polluters - by countries", col.names = c("Footprint per Person",
+                           "Country")) %>%
+    kable_styling("striped", full_width = F) %>%
+  row_spec(1:5, bold = T, color = "white", background = "#56AB6F")
 ```
 
 
@@ -110,40 +129,53 @@ kable() %>%
 ```{r}
 k <- dat[, sapply(dat, is.numeric)]
 k <- k[complete.cases(k), ]
-korelacija <- cor(k) # izlaz je matrica
-corrplot(korelacija, method = "color", tl.cex = 0.825)
+korelacija <- cor(k)
+corrplot(korelacija, method = "color", tl.cex = 0.825, title = "Pearson correlation")
 ```
 ```{r}
 k2 <- dat[, sapply(dat, is.numeric)]
 k2 <- k2[complete.cases(k2), ]
 korelacija2 <- cor(k2, method = "spearman") # izlaz je matrica
-corrplot(korelacija2, method = "color", tl.cex = 0.825)
+corrplot(korelacija2, method = "color", tl.cex = 0.825, title = "Spearman correlation")
 ```
 
 We can see that the results are different, 
-so we can conclude that the linear connections is not the best relationship.
+so we can conclude that the linear relationship is probably not the best guess.
+
+## Exploring by Regions
+
+```{r}
+dat %>% group_by(Region) %>% tally() %>% 
+  ggplot(aes(x = reorder(Region, n), n)) +
+  geom_bar(stat = "identity", fill = "lightgreen") +
+  theme_fivethirtyeight() +
+  ggtitle("Number of countries by regions") +
+  geom_text(aes(x = Region, y = 1, label = paste0(n)),
+            hjust=0.15, vjust=.5, size = 4, colour = 'black',
+            fontface = 'bold') +
+  coord_flip()
+```
 
 
-```{r pressure, echo=FALSE}
+
+```{r, echo=FALSE}
 dat %>% group_by(Region) %>% summarise(Total = sum(Total.Ecological.Footprint)) %>% 
   ggplot(aes(Region, Total, fill = Region)) + geom_histogram(stat = "identity") +
   theme_fivethirtyeight() +
-  ggtitle("Total per Capita Pollution by Region") +
+  ggtitle("Total per Capita Footprint by Region") +
   theme(axis.text.x = element_text(angle = 20, vjust = 0.65))
 
 ```
-
-
-```{r}
-multi.hist(dat[,sapply(dat, is.numeric)])
-
-```
-
+European Union leads in total per capita footprint.
 
 
 ## Linear regression
 
-### Economical Featurs
+We will use linear regression to explain per capit footprint by serveral predictors.
+Both economical and geographical features will be used.
+
+
+### Economical Features
 ```{r}
 
 linear_model1 <- lm(Total.Ecological.Footprint ~ HDI, data = dat)
@@ -154,6 +186,8 @@ summary(linear_model2)
 
 linear_model3 <- lm(Total.Ecological.Footprint ~ HDI + I(HDI**2), data = dat)
 summary(linear_model3)
+
+plot(linear_model3)
 
 slr <- ggplot(dat, aes(HDI, Total.Ecological.Footprint)) +
   geom_point(aes(text = Country)) +
@@ -191,8 +225,9 @@ It should be obvious that HDI and GDP are not linearly correlated.
 
 
 ```{r}
-multiple1 <- lm(Total.Ecological.Footprint ~  GDP.per.Capita + I(HDI**2) , data = dat)
+multiple1 <- lm(Total.Ecological.Footprint ~ GDP.per.Capita + Region + HDI + I(GDP.per.Capita**2) + I(HDI**2) , data = dat)
 summary(multiple1)
+plot(multiple1)
 ```
 
 ```{r}
@@ -200,7 +235,9 @@ ggplot(dat, aes(x = Population..millions., y = Total.Ecological.Footprint)) +
   geom_point() +
   theme_fivethirtyeight() +
   theme(axis.title = element_text(), axis.title.x = element_text()) +
-  scale_x_log10()
+  ggtitle("Using population as predictor",
+          subtitle = "not really useful as predictor") +
+  annotate("text", x = 800, y = 10,label = "Pearson correlation is -0.06", color = "red", size = 9)
 ```
 
 
@@ -240,49 +277,60 @@ cowplot::plot_grid(urban, forest, fishing, crops, ncol = 2, nrow = 2,
 
 ```
 <br>
-We can eyeball that urban land is more important variable than forests and fishing water.
+It can be seen increasing trends in all variables, except for _Forest Land_.
 
-
-
-P-value for Urban.Land is quite high, so we will stick to older model.
-
-## Good ol' decision trees
+## Data imputation 
 
 ```{r}
+indexes <- createDataPartition(dat$Total.Ecological.Footprint, list = F, p = 0.75)
+dat_train <- dat[indexes, ]
+dat_test <- dat[-indexes, ]
+
+dat_train_imputed <- rfImpute(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land + Total.Biocapacity, data = dat_train, iter = 20)
+
+```
 
 
-d_tree <- rpart(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land, data = dat_train_imputed)
+## Regression Trees
 
-rpart.plot(d_tree, main="Decision Tree", fallen.leaves=T, box.palette="GnBu")
+```{r}
+d_tree <- rpart(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land + Total.Biocapacity, data = dat_train_imputed)
+
+rpart.plot(d_tree, main="Regression Tree", fallen.leaves=T, box.palette="GnBu")
 
 predictions_d_tree <- predict(d_tree, newdata = dat_test)
 RMSE_d_tree <- sqrt(mean((predictions_d_tree[complete.cases(dat_test)] - dat_test$Total.Ecological.Footprint[complete.cases(dat_test)])**2))
 ```
-
+RMSE score is 1.27.
 
 ## Random Forest Regression
 
-```{r}
-
-indexes <- createDataPartition(dat$Total.Ecological.Footprint, list = F)
-dat_train <- dat[indexes, ]
-dat_test <- dat[-indexes, ]
-
-dat_train_imputed <- rfImpute(Total.Ecological.Footprint ~Region + Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land , data = dat_train, iter = 20)
-
-
-```
+We will use 10-fold cross validation to select optimal values for hyperparameters like _mtry_ (randomly selected variables) and _ntree_ (total number of trees in random forest)
 
 ```{r}
-cv.10.folds <- createMultiFolds(dat_train_imputed, k = 10, times = 2) # cross-validation 10 folds
+cv.10.folds <- createMultiFolds(dat_train_imputed, k = 10, times = 5) # cross-validation 10 folds
 ctrl.1 <- trainControl(method = "repeatedcv", number = 10, repeats = 3, index = cv.10.folds)
 
-rf_model <- train(Total.Ecological.Footprint ~ Region + Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land, data = dat_train_imputed, method = "rf", trControl = ctrl.1, tuneLength = 5)
-
-rf_model
-
+rf_model <- train(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land + Total.Biocapacity, data = dat_train_imputed, method = "rf", trControl = ctrl.1, tuneLength = 5, importance = T)
+importance <- varImp(rf_model)
+finaldf <- importance$importance
+variable_names <- rownames(finaldf)
+finaldf$Variables <- variable_names
 ```
 
+We can visualise importance of used predictors.
+
+```{r}
+ggplot(finaldf, aes(x = reorder(Variables, Overall), Overall)) +
+geom_point(stat = "identity", size = 4, pch = 21, fill = "blue") +
+geom_bar(stat = "identity", width = 0.075) +
+xlab("Variables Names") +
+coord_flip() +
+theme_fivethirtyeight() +
+ggtitle("Variables Ordered By Importance")
+```
+
+### Predicting values for new data
 ```{r}
 predictions_rf <- predict(rf_model, newdata = dat_test[complete.cases(dat_test), ])
 
@@ -290,10 +338,20 @@ predictions_rf <- predict(rf_model, newdata = dat_test[complete.cases(dat_test),
 y_real <- dat_test[complete.cases(dat_test), "Total.Ecological.Footprint"]
 
 RMSE_rf <- sqrt(mean((predictions_rf - y_real)**2))
+
+results <- tibble(
+  x = y_real,
+  y = predictions_rf,
+  error = abs(y_real - predictions_rf)
+)
+
+ggplot(results, aes(x, y)) +
+  geom_point(size = 2, shape = 1)  +
+  geom_abline(slope = 1, intercept = 0, color = "blue", linetype = 2) +
+  theme_fivethirtyeight() +
+  ggtitle("Observed vs. Predicted") + 
+  annotate("text", x = 5, y = 1.5, label = "RMSE = 1.17", color = "purple", size = 10)
 ```
 
-
-
-
-
+We can see that random forest algorithm got better results than regression tree. That's not big of a surprise because random forests are well known for robustness and good scores.
 
