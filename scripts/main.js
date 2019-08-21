@@ -3,6 +3,13 @@ const HDI = "HDI";
 const POPULATION = "Population (millions)";
 const BDP_PER_CAPITA = "GDP per Capita";
 
+
+const measuringUnits = {
+    [TOTAL_ECOLOGICAL_FOOTPRINT]: 'gha per capita',
+    [HDI]: '',
+    [POPULATION]: 'million',
+    [BDP_PER_CAPITA]: 'USD',
+}
 const defaultStyle = {
     weight: 2,
     opacity: 1,
@@ -64,7 +71,7 @@ function getColor(d) {
         d > round(currentMin + 3 * diff) ? '#FD8D3C' :
         d > round(currentMin + 2 * diff) ? '#FEB24C' :
         d > round(currentMin + diff) ? '#FED976' :
-                    '#FFEDA0';
+                                        '#FFEDA0';
 }
 
 function onEachFeature(feature, layer) {
@@ -106,12 +113,12 @@ function addLengend() {
     legend.onAdd = function (map) {
         var div = L.DomUtil.create('div', 'info legend');
         legendDiv = div;
-        grades = [0, 1, 2, 3, 4, 5, 6, 7].map(value => round(currentMin + value * (currentMax - currentMin) / 8));
+        var grades = [0, 1, 2, 3, 4, 5, 6, 7].map(value => round(currentMin + value * (currentMax - currentMin) / 8));
 
         // loop through our density intervals and generate a label with a colored square for each interval
         for (var i = 0; i < grades.length; i++) {
             div.innerHTML +=
-                '<i style="background:' + getColor(grades[i] + 1) + '"></i> ' +
+                '<i style="background:' + getColor(grades[i]) + '"></i> ' +
                 grades[i] + (grades[i + 1] ? ' &ndash; ' + grades[i + 1] + '<br>' : '+');
         }
 
@@ -132,10 +139,10 @@ function initiInfo() {
 
     // method that we will use to update the control based on feature properties passed
     info.update = function (props) {
-        const title = '<h4>Total Ecological Footprint</h4>';
+        const title = `<h4>${currentCriteria}</h4>`;
         this._div.innerHTML = title;
         this._div.innerHTML += (props ?
-            '<b>' + props.NAME + '</b><br />' + (props[currentCriteria] ? props[currentCriteria] + ' gha per capita' : "Data unavailable")
+            '<b>' + props.NAME + '</b><br />' + (props[currentCriteria] ? props[currentCriteria] + ' ' + measuringUnits[currentCriteria] : "Data unavailable")
             : 'Hover over a state');
 
     };
@@ -144,7 +151,15 @@ function initiInfo() {
 }
 
 function initTitleLayer() {
-    L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}', {
+    map.eachLayer(function (layer) {
+        map.removeLayer(layer);
+    });
+    if (this.layer) {
+        layer.removeFrom(map);
+        layer.remove();
+
+    }
+    layer = L.tileLayer('https://api.tiles.mapbox.com/v4/{id}/{z}/{x}/{y}.png?access_token={accessToken}', {
         attribution: 'Map data &copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors, <a href="https://creativecommons.org/licenses/by-sa/2.0/">CC-BY-SA</a>, Imagery © <a href="https://www.mapbox.com/">Mapbox</a>',
         maxZoom: 18,
         id: 'mapbox.light',
