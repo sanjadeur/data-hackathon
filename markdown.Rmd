@@ -20,7 +20,12 @@ can tell us about magnitude of our impact on our planet.
 Learning from ecological data can be very useful since it can point to variables which are 
 hurting nature the most.
 
-## Loading Packages
+```{r, out.width = "400px", fig.align='center', echo = F}
+knitr::include_graphics("visual/earth.png")
+
+```
+
+## Loading R packages
 
 ```{r,warning = F, message=F}
 library(tidyverse)
@@ -48,12 +53,13 @@ dat <- read.csv("data/countries.csv", encoding="UTF-8", stringsAsFactors = F)
 glimpse(dat)
 dat$GDP.per.Capita <-  as.numeric(gsub('[$,]', '', dat$GDP.per.Capita))
 
+# conversion to factors
 dat$Country <- as.factor(dat$Country)
 dat$Region <- as.factor(dat$Region)
 
 ```
 We can see that 19 of the columns are numeric types. Column GDP.per.Capita had to be converted to 
-_double_ type. Other columns are factors. We will ommit _Data.Quality_ because we will not use it anywhere.
+_double_ type. _Country_ and _Region_ were converted to factors. We will ommit _Data.Quality_ because we will not use it anywhere in this project.
 
 ```{r}
 dat$Data.Quality <- NULL
@@ -68,7 +74,7 @@ missing_data <- dat %>% summarise_all(funs(sum(is.na(.))/n()))
 missing_data <- gather(missing_data, key = "variables", value = "percent_missing")
 missing_data <- missing_data[missing_data$percent_missing > 0.0, ] 
 ggplot(missing_data, aes(x = reorder(variables, percent_missing), y = percent_missing)) +
-geom_bar(stat = "identity", fill = "red", aes(color = I('white')), size = 0.3)+
+geom_bar(stat = "identity", fill = "red", aes(color = I('white')), size = 0.3, alpha = 0.6)+
 xlab('variables')+
 coord_flip()+ 
 theme_fivethirtyeight() +
@@ -87,7 +93,7 @@ They are all pretty much small countries (with exceptions like Côte d'Ivoire, S
 
 ## Data splitting & imputation
 
-```{r}
+```{r, echo = F}
 indexes <- createDataPartition(dat$Total.Ecological.Footprint, list = F, p = 0.75)
 dat_train <- dat[indexes, ]
 dat_test <- dat[-indexes, ]
@@ -106,8 +112,8 @@ It's useful to show histograms of all numeric columns.
 multi.hist(dat[,sapply(dat, is.numeric)])
 ```
 
-Most of the variables (Population..millions, Fishing.Water, etc.) are right skewed. 
-We will inspect Total Ecological Footprint more detaily.
+Most of the variables (Population..millions, Fishing.Water, etc.) have right skewed distributions. 
+We will inspect Total Ecological Footprint more detaily since it is our target variable.
 
 ```{r}
 dat %>% ggplot(aes(x = Total.Ecological.Footprint)) +
@@ -155,8 +161,8 @@ corrplot(korelacija, method = "color", tl.cex = 0.825, title = "Pearson correlat
 ```{r}
 k2 <- dat[, sapply(dat, is.numeric)]
 k2 <- k2[complete.cases(k2), ]
-korelacija2 <- cor(k2, method = "spearman") # izlaz je matrica
-corrplot(korelacija2, method = "color", tl.cex = 0.825, title = "Spearman correlation", mar=c(0,0,1,0))
+korelacija2 <- cor(k2, method = "spearman")
+corrplot(korelacija2, method = "color", tl.cex = 0.825, title = "Spearman correlation", mar = c(0,0,1,0))
 ```
 
 We can see that the results are different, 
@@ -212,7 +218,7 @@ slr <- ggplot(dat, aes(HDI, Total.Ecological.Footprint)) +
   ggtitle("Simple Linear Regression",
           subtitle = "Model With Quadratic Term does much better") 
 
-ggplotly(slr, tooltip="text")
+ggplotly(slr, tooltip = "text")
 ```
 
 ```{r}
@@ -237,6 +243,7 @@ ggplot(dat, aes(x = HDI, y = GDP.per.Capita)) +
 ```
 
 It should be obvious that HDI and GDP are not linearly correlated.
+Exponential function would be much more suitable.
 
 
 
@@ -305,21 +312,18 @@ GDP <- dat$GDP.per.Capita <- as.numeric(gsub('[$,]', '', dat$GDP.per.Capita))
 final_multiple <- lm(Total.Ecological.Footprint ~ GDP.per.Capita + HDI + I(GDP.per.Capita**2) + I(HDI**2) , data = dat_train_imputed)
 predicted <- predict(multiple1, newdata = dat_test)
 
-open3d()
 
-#plot datapoints GDP,HDI,ECO FOOTPRINT
-# plot3d(predicted,HDI,GDP,col='red',xlab='Footprint',ylab='HDI',zlab ='GDP')
-# #plot regression model as an approximation
-# plot3d(dat$Total.Ecological.Footprint, HDI, GDP, col='blue', add = TRUE, xlab = 'Footprint', ylab='HDI', zlab='GDP')
 knitr::include_graphics(c("visual/cube1.png", "visual/cube2.png"))
 
 RMSE_mlr <- sqrt(mean((predicted[complete.cases(predicted)]- dat_test$Total.Ecological.Footprint[complete.cases(predicted)])**2))
 
 ```
 
+## Regression Tree
 
-
-## Regression Trees
+Regression trees are simple regression tehnique which can be easily interpreted and visualised.
+Disadvantages are that they are instable and sensitive to very small change in data. 
+It is crucial to avoid overfitting when using regression trees.
 
 ```{r}
 d_tree <- rpart(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land + Total.Biocapacity, data = dat_train_imputed)
@@ -394,7 +398,7 @@ models <- add_row(models, model_name = "Multiple linear regression", RMSE = RMSE
 models <- add_row(models, model_name = "Regression tree", RMSE = RMSE_regression_tree)
 models <- add_row(models, model_name = "Random forests", RMSE = RMSE_rf)
 
-models %>% kable(caption = "RMSE of different models") %>%  kable_styling("striped", full_width = T)
+models %>% kable(caption = "RMSE of different models", col.names = c("Model name", "RMSE")) %>%  kable_styling("striped", full_width = T)
 ```
 
-
+**The End!**
