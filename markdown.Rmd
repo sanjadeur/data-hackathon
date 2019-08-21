@@ -25,7 +25,10 @@ library(knitr)
 library(kableExtra)
 library(plotly)
 library(cowplot)
-
+library(caret)
+library(randomForest)
+library(rpart.plot)
+library(rpart)
 ```
 
 ## Knowing our data
@@ -80,13 +83,13 @@ We will inspect Total Ecological Footprint more detaily.
 ```{r}
 
 dat %>% ggplot(aes(x = Total.Ecological.Footprint)) +
-  geom_histogram(bins = 30, aes(y = ..density..)) + 
-  geom_density(alpha = 0.3, fill = "lightgreen") +
+  geom_histogram(bins = 30, aes(y = ..density..), fill = "purple") + 
+  geom_density(alpha = 0.2, fill = "purple") +
   theme_fivethirtyeight() +
-  ggtitle("Total Ecological Footprint",
-          subtitle = "Skewed Distribution") +# scale_x_continuous(trans = 'log10') + 
-  theme(axis.title = element_text(), axis.title.x = element_text())  # ovo je napravljeno zato što 538
-  #xlab(expression(~ log[10] ~ "(sales)"))
+  ggtitle("Total per Capita Footprint") +# scale_x_continuous(trans = 'log10') + 
+  theme(axis.title = element_text(), axis.title.x = element_text()) +# ovo je napravljeno zato što 538
+  geom_vline(xintercept = mean(dat$Total.Ecological.Footprint), size = 1.75, linetype = 3) +
+  annotate("text", x = 7, y = 0.35, label = "Average per Capita Footprint is 3.32")
 
 
 ```
@@ -108,13 +111,13 @@ kable() %>%
 k <- dat[, sapply(dat, is.numeric)]
 k <- k[complete.cases(k), ]
 korelacija <- cor(k) # izlaz je matrica
-corrplot(korelacija, method = "color")
+corrplot(korelacija, method = "color", tl.cex = 0.825)
 ```
 ```{r}
 k2 <- dat[, sapply(dat, is.numeric)]
 k2 <- k2[complete.cases(k2), ]
 korelacija2 <- cor(k2, method = "spearman") # izlaz je matrica
-corrplot(korelacija2, method = "color")
+corrplot(korelacija2, method = "color", tl.cex = 0.825)
 ```
 
 We can see that the results are different, 
@@ -125,9 +128,8 @@ so we can conclude that the linear connections is not the best relationship.
 dat %>% group_by(Region) %>% summarise(Total = sum(Total.Ecological.Footprint)) %>% 
   ggplot(aes(Region, Total, fill = Region)) + geom_histogram(stat = "identity") +
   theme_fivethirtyeight() +
-  ggtitle("Total Pollution by Region",
-          subtitle = "EU produces most total pollution") +
-  theme(axis.text.x = element_text(angle = 25, vjust = 0.65))
+  ggtitle("Total per Capita Pollution by Region") +
+  theme(axis.text.x = element_text(angle = 20, vjust = 0.65))
 
 ```
 
@@ -138,14 +140,6 @@ multi.hist(dat[,sapply(dat, is.numeric)])
 ```
 
 
-```{r}
-library(caret)
-indeksi <- createDataPartition(dat$Total.Ecological.Footprint, list = F)
-datTrain <- dat[indeksi, ]
-datTest <- dat[-indeksi, ]
-
-
-```
 
 ## Linear regression
 
@@ -187,7 +181,7 @@ ggplotly(slr, tooltip="text")
 ggplot(dat, aes(x = HDI, y = GDP.per.Capita)) +
   geom_point() +
   theme_fivethirtyeight() +
-  ggtitle("HDI vs GDP per Capita") +
+  ggtitle("HDI vs. GDP per Capita") +
    theme(axis.title = element_text(), axis.title.x = element_text())
 
 ```
@@ -197,9 +191,18 @@ It should be obvious that HDI and GDP are not linearly correlated.
 
 
 ```{r}
-multiple1 <- lm(Total.Ecological.Footprint ~  I(HDI**2) + I(GDP.per.Capita**2), data = dat)
+multiple1 <- lm(Total.Ecological.Footprint ~  GDP.per.Capita + I(HDI**2) , data = dat)
 summary(multiple1)
 ```
+
+```{r}
+ggplot(dat, aes(x = Population..millions., y = Total.Ecological.Footprint)) +
+  geom_point() +
+  theme_fivethirtyeight() +
+  theme(axis.title = element_text(), axis.title.x = element_text()) +
+  scale_x_log10()
+```
+
 
 ## Geographical Features
 
@@ -240,16 +243,54 @@ cowplot::plot_grid(urban, forest, fishing, crops, ncol = 2, nrow = 2,
 We can eyeball that urban land is more important variable than forests and fishing water.
 
 
-```{r}
 
-```
 P-value for Urban.Land is quite high, so we will stick to older model.
 
+## Good ol' decision trees
 
 ```{r}
 
+
+d_tree <- rpart(Total.Ecological.Footprint ~ Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land, data = dat_train_imputed)
+
+rpart.plot(d_tree, main="Decision Tree", fallen.leaves=T, box.palette="GnBu")
+
+predictions_d_tree <- predict(d_tree, newdata = dat_test)
+RMSE_d_tree <- sqrt(mean((predictions_d_tree[complete.cases(dat_test)] - dat_test$Total.Ecological.Footprint[complete.cases(dat_test)])**2))
 ```
 
+
+## Random Forest Regression
+
+```{r}
+
+indexes <- createDataPartition(dat$Total.Ecological.Footprint, list = F)
+dat_train <- dat[indexes, ]
+dat_test <- dat[-indexes, ]
+
+dat_train_imputed <- rfImpute(Total.Ecological.Footprint ~Region + Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land , data = dat_train, iter = 20)
+
+
+```
+
+```{r}
+cv.10.folds <- createMultiFolds(dat_train_imputed, k = 10, times = 2) # cross-validation 10 folds
+ctrl.1 <- trainControl(method = "repeatedcv", number = 10, repeats = 3, index = cv.10.folds)
+
+rf_model <- train(Total.Ecological.Footprint ~ Region + Population..millions. + HDI + GDP.per.Capita + Cropland + Grazing.Land + Forest.Land + Fishing.Water + Urban.Land, data = dat_train_imputed, method = "rf", trControl = ctrl.1, tuneLength = 5)
+
+rf_model
+
+```
+
+```{r}
+predictions_rf <- predict(rf_model, newdata = dat_test[complete.cases(dat_test), ])
+
+
+y_real <- dat_test[complete.cases(dat_test), "Total.Ecological.Footprint"]
+
+RMSE_rf <- sqrt(mean((predictions_rf - y_real)**2))
+```
 
 
 
